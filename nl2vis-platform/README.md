@@ -1,4 +1,5 @@
-# ChatChart
+# nl2vis
+
 
 自然语言转可视化（Natural Language to Visualization）智能分析平台。
 
