@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nl2vis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nl2vis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nl2vis123}
+      POSTGRES_DB: ${POSTGRES_DB:-nl2vis}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nl2vis} -d ${POSTGRES_DB:-nl2vis}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: nl2vis-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  sandbox:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    container_name: nl2vis-sandbox
+    restart: unless-stopped
+    ports:
+      - "${SANDBOX_PORT:-5001}:5000"
+    environment:
+      EXECUTOR_TIMEOUT: ${SANDBOX_EXECUTOR_TIMEOUT:-30}
+      EXECUTOR_MAX_OUTPUT: ${SANDBOX_MAX_OUTPUT:-65536}
+    # 沙箱仅在内网通信时可去掉 ports，由 backend 通过服务名访问
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: nl2vis-network
