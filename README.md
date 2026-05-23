@@ -20,7 +20,7 @@
 | 后端 | FastAPI + SQLAlchemy + Celery |
 | Agent | LangChain / 自研 ReAct Agent |
 | 沙箱 | Flask + Docker 隔离执行 |
-| 数据库 | PostgreSQL (可替换) |
+| 数据库 | PostgreSQL |
 | 部署 | Docker Compose |
 
 ## 项目结构
