@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-nl2vis}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nl2vis123}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nl2vis}
       POSTGRES_DB: ${POSTGRES_DB:-nl2vis}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"

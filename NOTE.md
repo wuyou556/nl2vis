@@ -6,5 +6,8 @@
 
 4. 创建模块  alembic不会
 
-5. main.py
+5. 创建路由
+
+6. main.py
+
 

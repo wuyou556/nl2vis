@@ -1,4 +1,5 @@
 from sqlalchemy import Column,Integer,String,Boolean
+from sqlalchemy.orm import relationship
 from app.db.base import Base
 from .base_mixins import TimestampMixin
 
@@ -9,3 +10,5 @@ class User(Base,TimestampMixin):
     email = Column(String(128),unique=True,nullable=False)
     hashed_password = Column(String(256),nullable=False)
     is_active = Column(Boolean,default=True,nullable=False)
+
+    sessions = relationship("Session",back_populates="user",lazy="joined")
