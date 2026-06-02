@@ -63,13 +63,9 @@ agent/
 │   ├── file_reader.py       #   文件读取工具（读 CSV/Excel）
 │   └── data_preview.py      #   数据预览工具（head/dtypes/shape）
 │
-├── prompts/                 # ── 提示词 ──
-│   ├── __init__.py          #   提示词统一导出
-│   └── system_prompt.py     #   系统提示词模板
+├── prompts.py               #   系统提示词模板（单文件，够用）
 │
-└── memory/                  # ── 记忆管理 ──
-    ├── __init__.py          #   统一导出
-    └── conversation.py      #   对话历史管理 + 上下文裁剪
+└── memory.py                 #   对话历史管理 + 上下文裁剪（单文件）
 ```
 
 ---
