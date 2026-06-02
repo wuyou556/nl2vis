@@ -1,5 +1,5 @@
 from pydantic import BaseModel,Field,ConfigDict
-from typing import Optional,Literal
+from typing import Literal
 from datetime import datetime
 
 class MessageCreate(BaseModel):

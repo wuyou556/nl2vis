@@ -1,5 +1,8 @@
 # NL2VIS API 路由层设计
 
+### 记得把User.py 的 get_current_user, hash_password拆出去
+
+
 ## 设计原则
 
 - **资源嵌套** — 消息、文件作为会话的子资源，路径体现层级关系
