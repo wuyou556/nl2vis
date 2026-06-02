@@ -11,4 +11,4 @@ class User(Base,TimestampMixin):
     hashed_password = Column(String(256),nullable=False)
     is_active = Column(Boolean,default=True,nullable=False)
 
-    sessions = relationship("Session",back_populates="user",lazy="joined")
+    sessions = relationship("Session",back_populates="user",lazy="select")

@@ -6,6 +6,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -14,7 +15,7 @@ logging.basicConfig(
 
 # 1) 统一加载根目录 .env（在导入其余模块前）
 env_path = Path(__file__).parent.parent.parent / ".env"
-if env_path.exists:
+if env_path.exists():
     load_dotenv(env_path)
     logging.info(f"Loaded env from {env_path}")
 else:
@@ -44,3 +45,8 @@ if DEBUG:
     logging.info("CORS: Development mode - allowing all origins")
 else:
     logging.info(f"CORS: Production mode - allowing {ALLOWED_ORIGINS}")
+
+
+# 4) 路由挂载 须在load_dotenv后引入
+from app.api.v1.router import v1_router
+app.include_router(v1_router)

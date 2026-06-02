@@ -29,3 +29,13 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+class TokenResponse(BaseModel):
+    """登录/注册响应"""
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str

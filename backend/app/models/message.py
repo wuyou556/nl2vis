@@ -8,6 +8,6 @@ class Message(Base):
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     sender = Column(String(32), nullable=False)  # "user" | "agent" | "system"
     content = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=func.now)
+    created_at = Column(DateTime, default=func.now())
 
     session = relationship("Session", back_populates="messages")

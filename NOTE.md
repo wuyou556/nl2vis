@@ -6,8 +6,10 @@
 
 4. 创建模块  alembic不会
 
-5. 创建路由
+5. schemas层完成
 
-6. main.py
+6. 创建路由
+
+7. main.py
 
 

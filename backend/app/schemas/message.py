@@ -4,7 +4,6 @@ from datetime import datetime
 
 class MessageCreate(BaseModel):
     """创建消息 - 请求体"""
-    session_id: int = Field(gt=0)
     content: str
 
 class MessageResponse(BaseModel):
