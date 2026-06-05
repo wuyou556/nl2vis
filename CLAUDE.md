@@ -6,19 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NL2VIS (ChatChart) — a Natural Language to Visualization platform. Users upload data files, describe analysis needs in natural language, and the system generates visualizations via a ReAct Agent with Docker-sandboxed code execution.
 
-**Current state**: Early-stage. Database models and sandbox are implemented; the Agent core, API routes, services, schemas, and frontend are scaffolded but not yet built.
+**Current state**: Backend is fully functional (database, API routes, Agent core, service layer). Frontend is not yet started. Celery and tests are still empty scaffolds.
 
 ## Tech Stack
 
-| Layer    | Technology                             |
-| -------- | -------------------------------------- |
-| Frontend | Vue 3 + TypeScript + Vite + ECharts    |
-| Backend  | FastAPI + SQLAlchemy (async) + Celery  |
-| Agent    | LangChain / ReAct pattern (planned)    |
-| Sandbox  | Flask + subprocess + Docker isolation  |
-| Database | PostgreSQL 16                          |
-| Cache    | Redis 7                                |
-| Deploy   | Docker Compose                         |
+| Layer    | Technology                               |
+| -------- | ---------------------------------------- |
+| Frontend | Vue 3 + TypeScript + Vite + ECharts      |
+| Backend  | FastAPI + SQLAlchemy (async)             |
+| Agent    | ReAct pattern (custom, vanilla Python)   |
+| Sandbox  | Flask + subprocess + Docker isolation    |
+| Database | PostgreSQL 16                            |
+| Cache    | Redis 7                                  |
+| Deploy   | Docker Compose                           |
 
 ## Commands
 
@@ -30,11 +30,11 @@ docker-compose up -d
 cd backend
 uvicorn app.main:app --reload --port 8000
 
-# Frontend dev server (scaffolded, no source yet)
+# Frontend dev server (not yet started)
 cd frontend
 npm install && npm run dev
 
-# Sandbox dev server
+# Sandbox dev server (if running standalone, not in Docker)
 cd sandbox
 pip install -r requirements.txt
 python executor_api.py
@@ -51,9 +51,11 @@ alembic history                                     # view migration history
 
 ### Environment & Config
 
-- **Single `.env`** at the project root (`nl2vis-platform/.env`), loaded by both `backend/app/main.py` and `backend/alembic/env.py`
+- **Single `.env`** at the project root (`nl2vis-platform/.env`), loaded by `backend/app/main.py` and `backend/alembic/env.py`
 - `DEBUG=true` sets wide-open CORS; `DEBUG=false` restricts to `ALLOWED_ORIGINS`
 - `DATABASE_URL` uses `postgresql+asyncpg://` for runtime (async), but Alembic swaps it to `postgresql+psycopg2://` (sync) internally
+- LLM config: `LLM_MODEL_NAME`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`
+- Agent behavior: `AGENT_MAX_ITERATIONS`, `AGENT_TOOL_TIMEOUT`, `AGENT_VERBOSE`, `SANDBOX_URL`
 
 ### Database Layer (`backend/app/db/`)
 
@@ -65,10 +67,53 @@ alembic history                                     # view migration history
 Four tables, all imported in `__init__.py` for Alembic autogenerate:
 
 - **User** — `id`, `username`, `email`, `hashed_password`, `is_active` — has many Sessions
-- **Session** — `id`, `user_id` (FK), `title`, `started_at`, `ended_at`, `status` — has many Messages
+- **Session** — `id`, `user_id` (FK), `title`, `started_at`, `ended_at`, `status` — has many Messages and Files
 - **Message** — `id`, `session_id` (FK), `sender` (user/agent/system), `content` — belongs to Session
-- **File** — `id`, `user_id` (FK nullable), `filename`, `storage_path`, `content_type`, `size`, `uploaded_at`
+- **File** — `id`, `session_id` (FK), `filename`, `storage_path`, `content_type`, `size`, `uploaded_at`
 - `TimestampMixin` provides `created_at` + `updated_at` on User, Session, File
+
+### API Routes (`backend/app/api/v1/`)
+
+- **`auth.py`** — `/auth/register`, `/auth/login`, `/auth/me` — JWT-based authentication with bcrypt
+- **`sessions.py`** — Full CRUD for sessions, messages (with Agent integration), and file uploads
+- **`users.py`** — User profile endpoints
+- **`router.py`** — Aggregates all routers under `/api/v1` prefix
+
+### Agent Core (`backend/app/agent/`)
+
+Custom ReAct Agent built with vanilla Python (no LangChain dependency):
+
+```
+agent/
+├── __init__.py              # Public API: AgentExecutor, AgentSettings, etc.
+├── schemas.py               # 4 dataclasses: AgentAction, AgentObservation,
+│                            #   AgentStep, AgentResult
+├── config.py                # AgentSettings dataclass + get_agent_config() factory
+│                            #   + create_llm_client() (OpenAI-compatible SDK)
+├── prompts.py               # System prompt template with tools_description placeholder
+├── memory.py                # ConversationMemory: load_history, truncate (sliding
+│                            #   window), build_messages (role mapping agent→assistant)
+├── core.py                  # AgentExecutor: ReAct loop (Think→Act→Observe),
+│                            #   _parse_llm_output() with regex, _call_tool() with
+│                            #   graceful degradation
+└── tools/
+    ├── __init__.py           # TOOL_REGISTRY dict, get_tools(), build_tools_description()
+    ├── base.py               # BaseTool ABC with @abstractmethod name/description/run
+    ├── file_reader.py        # Read CSV/Excel/JSON files (MAX_ROWS=50 defense)
+    ├── data_preview.py       # Structured preview: shape, dtypes, head, describe, missing
+    └── code_executor.py      # POST code to Docker sandbox via httpx; constructor injection
+```
+
+**ReAct Loop**: `run()` assembles context (system prompt + history + user message), then iterates: LLM call → regex parse → if Action: call tool + append observation → if Final Answer: return AgentResult. Max iterations enforced with fallback timeout message.
+
+**Error Strategy**: Tools return `[错误]`-prefixed strings instead of throwing. AgentExecutor has 3-layer fault tolerance: unknown tool → tool exception → unknown exception. Service layer catches remaining failures and stores `sender="system"` messages.
+
+### Service Layer (`backend/app/services/`)
+
+Thin business-logic layer between routes and Agent:
+
+- **`session_service.py`** — `SessionService.process_message()`: queries files + history, assembles AgentExecutor, bridges sync Agent via `asyncio.to_thread()`, saves Agent reply
+- **`__init__.py`** — Exports `SessionService`
 
 ### Sandbox (`sandbox/`)
 
@@ -87,17 +132,33 @@ Three services: `postgres` (16-alpine), `redis` (7-alpine), `sandbox` (custom bu
 ```
 backend/app/
   main.py          # FastAPI app creation, CORS, env loading
-  db/              # Base model + async session
-  models/          # SQLAlchemy ORM models (User, Session, Message, File)
-  agent/           # (scaffold) tools/, prompts/, memory/ — all empty
-  api/v1/          # (scaffold) routes — empty
-  schemas/         # (scaffold) Pydantic models — empty
-  services/        # (scaffold) business logic — empty
-  tasks/           # (scaffold) Celery tasks — empty
-  core/            # (scaffold) cross-cutting concerns — empty
-  utils/           # (scaffold) helpers — empty
-backend/tests/     # empty
-frontend/src/      # scaffolded directory, no source files yet
+  db/              # base.py + session.py (async engine)
+  models/          # User, Session, Message, File + TimestampMixin
+  agent/           # ReAct Agent core (schemas, config, prompts, memory, core, tools/)
+  api/v1/          # auth, sessions, users routes + router aggregator
+  schemas/         # Pydantic: user, session, message, file
+  services/        # SessionService (business orchestration)
+  core/            # config.py (JWT settings, etc.)
+  tasks/           # (empty scaffold) Celery tasks
+  utils/           # (empty scaffold) helpers
+backend/tests/     # (empty scaffold)
+frontend/src/      # (empty scaffold)
+```
+
+### Data Flow (Send Message)
+
+```
+POST /api/v1/sessions/{id}/messages
+  → sessions.py: save Message(sender="user")
+  → SessionService.process_message()
+    → query files + history from DB
+    → assemble AgentExecutor(llm, tools, memory, settings)
+    → await asyncio.to_thread(executor.run, ...)
+      → AgentExecutor ReAct loop
+        → LLM API call → parse → tool call → observe → repeat
+      → return AgentResult(output="...")
+    → save Message(sender="agent", content=result.output)
+  → return agent Message to frontend
 ```
 
 ## Migrations (Alembic)

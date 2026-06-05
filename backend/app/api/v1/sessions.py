@@ -16,6 +16,7 @@ from app.models.user import User
 from app.schemas.session import SessionResponse, SessionUpdate
 from app.schemas.message import MessageCreate,MessageResponse
 from app.schemas.file import FileResponse
+from app.services import SessionService
 from .auth import get_current_user
 
 router = APIRouter(prefix="/sessions", tags=["会话管理"])
@@ -129,6 +130,7 @@ async def send_message(
     if not session:
         raise HTTPException(404, detail="会话不存在")
 
+    # 存储消息到数据库
     message = Message(
         session_id=session_id,
         sender="user",
@@ -137,7 +139,11 @@ async def send_message(
     db.add(message)
     await db.flush()
     await db.refresh(message)
-    return message
+    
+    # 调用服务层处理消息获得回复
+    agent_message = await SessionService().process_message(session_id, data.content, db)
+
+    return agent_message
 
 
 
@@ -207,7 +213,7 @@ async def delete_file(
 @router.post("/{session_id}/files",response_model=FileResponse,status_code=status.HTTP_201_CREATED)
 async def upload_files(
     file: UploadFile,
-    session_id = Annotated[int,Path(ge=1)],
+    session_id: Annotated[int, Path(ge=1)],
     db: AsyncSession = Depends(get_db)
 ):
     existing = (await db.execute(select(Session).where(Session.id == session_id))).scalar_one_or_none()
