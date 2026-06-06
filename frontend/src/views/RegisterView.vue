@@ -87,7 +87,7 @@ async function handleRegister() {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #2c3e50, #3498db);
 }
 
 .register-card {
@@ -122,7 +122,7 @@ async function handleRegister() {
 }
 
 .link a {
-  color: #667eea;
+  color: #3498db;
   text-decoration: none;
 }
 </style>

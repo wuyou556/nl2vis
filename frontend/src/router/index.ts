@@ -19,9 +19,20 @@ const router = createRouter({
     },
     {
       path: '/',
-      name: 'chat',
-      component: () => import('@/views/ChatView.vue'),
+      component: () => import('@/layouts/MainLayout.vue'),
       meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'home',
+          component: () => import('@/views/ChatView.vue'),
+        },
+        {
+          path: 'session/:id',
+          name: 'chat',
+          component: () => import('@/views/ChatView.vue'),
+        },
+      ],
     },
   ],
 })

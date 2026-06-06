@@ -7,6 +7,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-nl2vis}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nl2vis}
       POSTGRES_DB: ${POSTGRES_DB:-nl2vis}
+      TZ: Asia/Shanghai
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
