@@ -1,11 +1,20 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { MessageResponse } from '@/types/api'
+import { sniffECharts } from '@/utils/echarts-sniffer'
+import MarkdownRenderer from './MarkdownRenderer.vue'
+import EChartRenderer from './EChartRenderer.vue'
 
-defineProps<{
+const props = defineProps<{
   message: MessageResponse
 }>()
 
-// 格式化时间
+// agent 消息：拆分文本和图表
+const parsed = computed(() => {
+  if (props.message.sender !== 'agent') return null
+  return sniffECharts(props.message.content)
+})
+
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('zh-CN', {
     hour: '2-digit',
@@ -24,7 +33,19 @@ function formatTime(dateStr: string) {
 
     <!-- 气泡内容 -->
     <div class="bubble" :class="message.sender">
-      <div class="content">{{ message.content }}</div>
+      <!-- agent 消息：文本 + 图表混合渲染 -->
+      <template v-if="parsed">
+        <template v-for="(part, i) in parsed.textParts" :key="'t'+i">
+          <MarkdownRenderer :content="part" />
+        </template>
+        <template v-for="(opt, i) in parsed.chartOptions" :key="'c'+i">
+          <EChartRenderer :option="opt" />
+        </template>
+      </template>
+      <!-- user / system 消息：纯文本 -->
+      <template v-else>
+        <div class="content">{{ message.content }}</div>
+      </template>
       <div class="time">{{ formatTime(message.created_at) }}</div>
     </div>
   </div>
@@ -84,6 +105,7 @@ function formatTime(dateStr: string) {
 .bubble.agent {
   background: #f4f4f5;
   color: #303133;
+  max-width: 85%;
 }
 
 .bubble.agent .time {

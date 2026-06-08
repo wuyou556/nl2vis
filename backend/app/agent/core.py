@@ -124,10 +124,15 @@ class AgentExecutor:
 
         # 工具参数（JSON）
         tool_input = {}
-        input_match = re.search(r"Action Input:\s*(\{.*?\})", text, re.DOTALL)
+        input_match = re.search(r"Action Input:\s*(\{.*)", text, re.DOTALL)
         if input_match:
+            raw = input_match.group(1)
+            # 找到最后一个 }，截取到那里
+            last_brace = raw.rfind('}')
+            if last_brace != -1:
+                raw = raw[:last_brace + 1]
             try:
-                tool_input = json.loads(input_match.group(1))
+                tool_input = json.loads(raw)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Action Input JSON 解析失败: {e}")
 

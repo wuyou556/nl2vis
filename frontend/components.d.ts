@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     ChatBubble: typeof import('./src/components/ChatBubble.vue')['default']
     ChatInput: typeof import('./src/components/ChatInput.vue')['default']
+    EChartRenderer: typeof import('./src/components/EChartRenderer.vue')['default']
     ElAvatar: typeof import('element-plus/es')['ElAvatar']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElEmpty: typeof import('element-plus/es')['ElEmpty']
@@ -22,6 +23,7 @@ declare module 'vue' {
     ElInput: typeof import('element-plus/es')['ElInput']
     ElTag: typeof import('element-plus/es')['ElTag']
     FileUploader: typeof import('./src/components/FileUploader.vue')['default']
+    MarkdownRenderer: typeof import('./src/components/MarkdownRenderer.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }
