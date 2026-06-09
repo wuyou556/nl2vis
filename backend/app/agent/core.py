@@ -14,6 +14,7 @@ import re
 from .schemas import AgentAction, AgentObservation, AgentStep, AgentResult
 from .prompts import get_system_prompt
 from .tools import build_tools_description
+from .path_utils import to_sandbox_path, prepare_code_for_sandbox
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ class AgentExecutor:
         )
 
         steps = []
+        self._session_files = files
 
         # ── ReAct 循环 ────────────────────────────
         for i in range(self.max_iterations):
@@ -53,18 +55,35 @@ class AgentExecutor:
                 temperature=self.settings.temperature,
                 max_tokens=self.settings.max_tokens,
             )
-            llm_text = response.choices[0].message.content
+            choice = response.choices[0]
+            llm_text = self._normalize_llm_text(choice.message.content)
+            finish_reason = getattr(choice, "finish_reason", None)
 
             if self.settings.verbose:
-                logger.info(f"[Iteration {i+1}] LLM output:\n{llm_text[:500]}...")
+                preview = llm_text[:500] if llm_text else "(empty)"
+                logger.info(
+                    f"[Iteration {i+1}] LLM output (finish_reason={finish_reason}):\n{preview}"
+                    + ("..." if len(llm_text) > 500 else "")
+                )
 
             # ② 解析输出
             action = self._parse_llm_output(llm_text)
+            if action is False:
+                messages.append({"role": "assistant", "content": llm_text or "(empty)"})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "你的上一次回复为空或格式不正确。"
+                        "请严格使用 Thought + Action + Action Input，"
+                        "或 Thought + Final Answer 格式重新输出。"
+                    ),
+                })
+                continue
 
             if action is None:
                 # Final Answer → 结束
                 return AgentResult(
-                    output=llm_text.split("Final Answer:")[-1].strip(),
+                    output=self._extract_final_answer(llm_text),
                     steps=steps,
                     iterations=i + 1,
                 )
@@ -99,32 +118,58 @@ class AgentExecutor:
         if not files:
             return ""
 
-        lines = ["", "📁 可用文件（请使用以下路径读取）："]
+        lines = ["", "📁 可用文件："]
         for f in files:
-            lines.append(f"  - {f.filename} → {f.storage_path}")
+            sandbox_path = to_sandbox_path(f.storage_path)
+            lines.append(f"  - {f.filename}")
+            lines.append(f"    data_preview / read_file: {f.storage_path}")
+            lines.append(f"    execute_code（沙箱内）: {sandbox_path}")
         return "\n".join(lines)
 
-    def _parse_llm_output(self, text: str) -> AgentAction | None:
-        """解析 LLM 输出。有 Action → AgentAction，有 Final Answer → None"""
-        if "Final Answer:" in text:
+    def _normalize_llm_text(self, text: str | None) -> str:
+        """清理 LLM 原始输出，去掉 markdown 代码块包裹。"""
+        if not text:
+            return ""
+        text = text.strip()
+        fence_match = re.match(r"^```(?:\w+)?\s*\n?(.*?)\n?```\s*$", text, re.DOTALL)
+        if fence_match:
+            text = fence_match.group(1).strip()
+        return text
+
+    def _parse_llm_output(self, text: str) -> AgentAction | None | bool:
+        """
+        解析 LLM 输出。
+        - AgentAction: 需要调用工具
+        - None: Final Answer，结束循环
+        - False: 无法解析，请求 LLM 重试
+        """
+        if not text.strip():
+            return False
+
+        if re.search(r"(?:Final Answer|最终答案)\s*[:：]", text):
             return None
 
-        if "Action:" not in text:
-            raise ValueError(f"LLM 输出既没有 Action 也没有 Final Answer:\n{text[:300]}")
+        # 无格式标记但有实质内容 → 当作最终回复
+        if not re.search(r"Action\s*[:：]", text):
+            if len(text.strip()) > 20:
+                return None
+            return False
 
         # Thought
         thought = ""
-        thought_match = re.search(r"Thought:\s*(.*?)(?=Action:|\Z)", text, re.DOTALL)
+        thought_match = re.search(r"Thought\s*[:：]\s*(.*?)(?=Action\s*[:：]|\Z)", text, re.DOTALL)
         if thought_match:
             thought = thought_match.group(1).strip()
 
         # 工具名
-        action_match = re.search(r"Action:\s*(\S+)", text)
+        action_match = re.search(r"Action\s*[:：]\s*(\S+)", text)
         tool_name = action_match.group(1).strip() if action_match else ""
+        if not tool_name:
+            return False
 
         # 工具参数（JSON）
         tool_input = {}
-        input_match = re.search(r"Action Input:\s*(\{.*)", text, re.DOTALL)
+        input_match = re.search(r"Action Input\s*[:：]\s*(\{.*)", text, re.DOTALL)
         if input_match:
             raw = input_match.group(1)
             # 找到最后一个 }，截取到那里
@@ -134,7 +179,8 @@ class AgentExecutor:
             try:
                 tool_input = json.loads(raw)
             except json.JSONDecodeError as e:
-                raise ValueError(f"Action Input JSON 解析失败: {e}")
+                logger.warning(f"Action Input JSON 解析失败: {e}")
+                return False
 
         return AgentAction(
             tool=tool_name,
@@ -142,6 +188,14 @@ class AgentExecutor:
             thought=thought,
             log=text,
         )
+
+    def _extract_final_answer(self, text: str) -> str:
+        """从 LLM 输出中提取最终回复正文。"""
+        for pattern in (r"Final Answer\s*[:：]\s*(.*)", r"最终答案\s*[:：]\s*(.*)"):
+            match = re.search(pattern, text, re.DOTALL)
+            if match:
+                return match.group(1).strip()
+        return text.strip()
 
     def _call_tool(self, tool_name: str, tool_input: dict) -> AgentObservation:
         """按名查找工具并执行，失败时返回包含错误信息的 Observation"""
@@ -154,8 +208,16 @@ class AgentExecutor:
             )
 
         try:
+            if tool_name == "execute_code" and "code" in tool_input:
+                tool_input = {
+                    **tool_input,
+                    "code": prepare_code_for_sandbox(
+                        tool_input["code"],
+                        getattr(self, "_session_files", None) or [],
+                    ),
+                }
             result = tool.run(**tool_input)
-            success = "[错误]" not in result
+            success = "[错误]" not in result and "[执行失败]" not in result
             return AgentObservation(tool=tool_name, result=result, success=success)
         except Exception as e:
             logger.error(f"工具 {tool_name} 执行异常: {e}")

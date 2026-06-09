@@ -34,6 +34,8 @@ class CodeExecutorTool(BaseTool):
             "可以用于：数据分析（pandas）、统计计算（numpy）、"
             "生成图表数据（JSON）、数据清洗和转换。"
             "沙箱限制：超时最多 30 秒，输出最多 64KB，无网络访问。"
+            "用户上传的文件挂载在 /data/uploads/<session_id>/<filename>，"
+            "读取数据时请使用该 Linux 路径，不要使用 Windows 盘符路径。"
             "代码中请用 print() 输出关键结果，这些会作为返回值传回来。"
             "如果代码执行出错，查看 stderr 中的错误信息，修复后重试。"
         )

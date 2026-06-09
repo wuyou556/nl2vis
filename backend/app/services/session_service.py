@@ -12,6 +12,7 @@ from app.agent import (
     ConversationMemory,
     get_tools,
 )
+from app.agent.tools import update_sandbox_url
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class SessionService:
             
             # 组装AgentExecutor
             settings = get_agent_config()
+            update_sandbox_url(settings.sandbox_url)
             llm = create_llm_client(settings)
             tools = get_tools()
             memory = ConversationMemory()

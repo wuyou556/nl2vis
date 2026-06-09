@@ -24,7 +24,7 @@ class AgentSettings:
     api_key: str = "sk-your-api-key-here"
     base_url: str = "https://api.deepseek.com/v1"
     temperature: float = 0.0
-    max_tokens: int = 2048
+    max_tokens: int = 4096
 
     # Agent 行为
     max_iterations: int = 10
@@ -47,7 +47,7 @@ def get_agent_config() -> AgentSettings:
         api_key=os.getenv("LLM_API_KEY", "sk-your-api-key-here"),
         base_url=os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1"),
         temperature=float(os.getenv("LLM_TEMPERATURE", "0.0")),
-        max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2048")),
+        max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
         max_iterations=int(os.getenv("AGENT_MAX_ITERATIONS", "10")),
         tool_timeout=int(os.getenv("AGENT_TOOL_TIMEOUT", "30")),
         verbose=os.getenv("AGENT_VERBOSE", "true").lower() == "true",

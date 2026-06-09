@@ -42,9 +42,12 @@ services:
     restart: unless-stopped
     ports:
       - "${SANDBOX_PORT:-5001}:5000"
+    volumes:
+      - ./backend/app/uploads:/data/uploads:ro
     environment:
       EXECUTOR_TIMEOUT: ${SANDBOX_EXECUTOR_TIMEOUT:-30}
       EXECUTOR_MAX_OUTPUT: ${SANDBOX_MAX_OUTPUT:-65536}
+      SANDBOX_WORK_DIR: /tmp/sandbox-work
     # 沙箱仅在内网通信时可去掉 ports，由 backend 通过服务名访问
     deploy:
       resources:

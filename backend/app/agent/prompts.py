@@ -46,7 +46,8 @@ Final Answer: 用中文给用户的最终回复，解释分析结果和数据洞
 
 - 每次回复只能包含一个 Action 或一个 Final Answer，不能同时出现
 - Action Input 必须是合法的 JSON
-- 编写 pandas 代码时，文件路径使用 read_file 或 data_preview 返回的路径
+- data_preview / read_file 使用宿主机绝对路径
+- execute_code 在 Linux 沙箱中运行，读取 CSV/Excel 时必须使用 `/data/uploads/{{session_id}}/{{filename}}` 路径，不要使用 Windows 盘符路径
 - 图表数据输出为 JSON，前端会使用 ECharts 渲染
 - 最终回复要简洁、有洞察力，使用中文
 - 如果用户的问题不涉及数据分析，用 Final Answer 直接回答
