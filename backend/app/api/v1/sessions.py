@@ -1,11 +1,12 @@
 import os
 import uuid
+import shutil
 from typing import Annotated
 from datetime import datetime
 from pathlib import Path as FilePath
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status, UploadFile
-from sqlalchemy import select,desc,asc
+from sqlalchemy import select,delete,desc,asc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -83,7 +84,7 @@ async def update_session(
     return session
 
 # # ---------------------------------------------------------------------------
-# # DELETE /sessions/{session_id}  关闭会话
+# # DELETE /sessions/{session_id}  删除会话
 # # ---------------------------------------------------------------------------
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def close_session(
@@ -94,12 +95,16 @@ async def close_session(
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="会话不存在")
-    session.status = "closed"
-    session.ended_at = datetime.now()
+    
+    await db.execute(delete(Message).where(Message.session_id == session_id))
+    await db.execute(delete(File).where(File.session_id == session_id))
 
+    session_dir = UPLOAD_DIR / str(session_id)
+    if session_dir.exists():
+        shutil.rmtree(session_dir)
+    
+    await db.delete(session)
     await db.flush()
-
-
 
 # ---------------------------------------------------------------------------
 # GET /sessions/{session_id}/messages  查询所有消息

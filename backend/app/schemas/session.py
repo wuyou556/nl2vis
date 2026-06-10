@@ -19,5 +19,3 @@ class SessionResponse(BaseModel):
     user_id: int
     title: Optional[str]
     started_at: datetime
-    ended_at: Optional[datetime]
-    status: str
