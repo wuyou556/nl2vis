@@ -26,21 +26,23 @@ class SessionService:
             )
             files = files_result.scalars().all()
 
-            # 查历史消息
-            history_result = await db.execute(
-                select(Message)
-                .where(Message.session_id == session_id)
-                .order_by(asc(Message.created_at))
-            )
-            history = history_result.scalars().all()
-            
-            # 组装AgentExecutor
+            # 获取必要配置
             settings = get_agent_config()
             update_sandbox_url(settings.sandbox_url)
             llm = create_llm_client(settings)
             tools = get_tools()
             memory = ConversationMemory()
 
+            # 查历史消息
+            history_result = await db.execute(
+                select(Message)
+                .where(Message.session_id == session_id)
+                .order_by(asc(Message.created_at))
+                .limit(memory.max_messages)
+            )
+            history = history_result.scalars().all()
+   
+            # 组装AgentExecutor
             executor = AgentExecutor(
                 llm_client=llm,
                 tools=tools,

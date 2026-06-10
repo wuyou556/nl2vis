@@ -36,11 +36,13 @@ class AgentExecutor:
         file_info = self._format_file_info(files)
         message_history = self.memory.load_history(history)
 
+        filenames = [f.filename for f in files] if files else []
         messages = self.memory.build_messages(
             system_prompt=system_prompt,
             history=message_history,
             user_message=user_message + file_info,
             agent_steps=[],
+            filenames = filenames
         )
 
         steps = []

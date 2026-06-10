@@ -16,6 +16,7 @@ python-jose[cryptography]==3.5.0
 openai>=2.0,<3            # LLM API 客户端（兼容 DeepSeek/通义千问/智谱）
 pandas>=2.0               # 数据读取和预览
 openpyxl>=3.1             # Excel 文件读取支持
+tiktoken>=0.5.0           # 精确计算 token 数（用于对话历史截断）
 
 # Agent 工具
 httpx>=0.28,<1            # 异步 HTTP 客户端（调用沙箱 API）

@@ -20,4 +20,11 @@ class Settings:
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")              # 签名算法
     JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))  # token 过期时间(分钟)
 
+    # llm
+    LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME","deepseek-v4-pro")
+
+    # Memory 配置
+    MEMORY_MAX_TOKENS = int(os.getenv("MEMORY_MAX_TOKENS", "4000"))
+    MEMORY_MAX_MESSAGES = int(os.getenv("MEMORY_MAX_MESSAGES","200"))
+
 settings = Settings()
