@@ -1,19 +1,77 @@
 import { defineStore } from 'pinia'
-import { ref, computed, nextTick } from 'vue'
-import type { MessageResponse, FileResponse, SSEEvent } from '@/types/api'
+import { ref, computed, reactive } from 'vue'
+import type { MessageResponse, SSEEvent, SessionState } from '@/types/api'
 import * as messageApi from '@/api/message'
 import * as fileApi from '@/api/file'
 
-export const useChatStore = defineStore('chat', () => {
-  const messages = ref<MessageResponse[]>([])
-  const files = ref<FileResponse[]>([])
-  const sending = ref(false)
-  const error = ref<string | null>(null)
-  const currentAbortController = ref<AbortController | null>(null)
 
-  // 流式输出状态
-  const streamingContent = ref('')
-  const streamingToolCalls = ref<Array<{ tool: string; input: any; result?: string; success?: boolean }>>([])
+export const useChatStore = defineStore('chat', () => {
+  // 当前会话 ID
+  const currentSessionId = ref<number | null>(null)
+
+  // 所有会话的状态映射（使用 reactive 确保深层响应式）
+  const sessionStates = reactive<Map<number, SessionState>>(new Map())
+
+  // 获取当前会话的状态（如果没有则创建）
+  function getCurrentState(): SessionState {
+    const id = currentSessionId.value
+    if (!id) {
+      // 返回一个临时的空状态（用于初始化前）
+      return reactive({
+        messages: [],
+        files: [],
+        sending: false,
+        error: null,
+        streamingContent: '',
+        streamingToolCalls: [],
+        abortController: null,
+      })
+    }
+
+    if (!sessionStates.has(id)) {
+      sessionStates.set(id, reactive({
+        messages: [],
+        files: [],
+        sending: false,
+        error: null,
+        streamingContent: '',
+        streamingToolCalls: [],
+        abortController: null,
+      }))
+    }
+    return sessionStates.get(id)!
+  }
+
+  // 便捷访问器（当前会话）
+  const messages = computed({
+    get: () => getCurrentState().messages,
+    set: (val) => { getCurrentState().messages = val },
+  })
+
+  const files = computed({
+    get: () => getCurrentState().files,
+    set: (val) => { getCurrentState().files = val },
+  })
+
+  const sending = computed({
+    get: () => getCurrentState().sending,
+    set: (val) => { getCurrentState().sending = val },
+  })
+
+  const error = computed({
+    get: () => getCurrentState().error,
+    set: (val) => { getCurrentState().error = val },
+  })
+
+  const streamingContent = computed({
+    get: () => getCurrentState().streamingContent,
+    set: (val) => { getCurrentState().streamingContent = val },
+  })
+
+  const streamingToolCalls = computed({
+    get: () => getCurrentState().streamingToolCalls,
+    set: (val) => { getCurrentState().streamingToolCalls = val },
+  })
 
   // 按时间排序的消息列表
   const sortedMessages = computed(() =>
@@ -24,17 +82,25 @@ export const useChatStore = defineStore('chat', () => {
 
   // 加载某个会话的消息和文件
   async function loadChat(sessionId: number) {
+    currentSessionId.value = sessionId
+    const state = getCurrentState()
+
+    // 如果已经在发送中，不重新加载（让流式请求继续）
+    if (state.sending) return
+
     const [msgList, fileList] = await Promise.all([
       messageApi.getMessages(sessionId),
       fileApi.getFiles(sessionId),
     ])
-    messages.value = msgList
-    files.value = fileList
-    error.value = null
+    state.messages = msgList
+    state.files = fileList
+    state.error = null
   }
 
   // 发送消息并等待 Agent 回复（非流式，备用）
   async function sendMessage(sessionId: number, content: string) {
+    const state = getCurrentState()
+
     // 先把用户消息加到列表（乐观更新）
     const tempUserMsg: MessageResponse = {
       id: Date.now(),
@@ -43,24 +109,26 @@ export const useChatStore = defineStore('chat', () => {
       content,
       created_at: new Date().toISOString(),
     }
-    messages.value.push(tempUserMsg)
+    state.messages.push(tempUserMsg)
 
-    sending.value = true
-    error.value = null
+    state.sending = true
+    state.error = null
 
     try {
       const agentMsg = await messageApi.sendMessage(sessionId, { content })
-      messages.value.push(agentMsg)
+      state.messages.push(agentMsg)
     } catch (e: any) {
-      error.value = e?.message ?? '发送失败'
-      messages.value.pop()
+      state.error = e?.message ?? '发送失败'
+      state.messages.pop()
     } finally {
-      sending.value = false
+      state.sending = false
     }
   }
 
   // 发送消息（流式输出）
   function sendMessageStream(sessionId: number, content: string) {
+    const state = getCurrentState()
+
     // 先把用户消息加到列表（乐观更新）
     const tempUserMsg: MessageResponse = {
       id: Date.now(),
@@ -69,12 +137,12 @@ export const useChatStore = defineStore('chat', () => {
       content,
       created_at: new Date().toISOString(),
     }
-    messages.value.push(tempUserMsg)
+    state.messages.push(tempUserMsg)
 
-    sending.value = true
-    error.value = null
-    streamingContent.value = ''
-    streamingToolCalls.value = []
+    state.sending = true
+    state.error = null
+    state.streamingContent = ''
+    state.streamingToolCalls = []
 
     // 创建临时的 agent 消息（用于实时显示流式内容）
     const tempAgentMsg: MessageResponse = {
@@ -84,34 +152,35 @@ export const useChatStore = defineStore('chat', () => {
       content: '',
       created_at: new Date().toISOString(),
     }
-    messages.value.push(tempAgentMsg)
+    state.messages.push(tempAgentMsg)
 
     // 记录临时消息的索引，用于后续更新
-    const agentMsgIndex = messages.value.length - 1
+    const agentMsgIndex = state.messages.length - 1
 
     const controller = messageApi.sendMessageStream(
       sessionId,
       { content },
       (event: SSEEvent) => {
+        // 始终更新对应会话的状态（闭包捕获的 state）
         switch (event.type) {
           case 'token':
-            streamingContent.value += event.content || ''
-            // 更新临时消息的内容（使用索引访问，确保响应式更新）
-            messages.value[agentMsgIndex] = {
-              ...messages.value[agentMsgIndex],
-              content: streamingContent.value
+            state.streamingContent += event.content || ''
+            // 更新临时消息的内容
+            state.messages[agentMsgIndex] = {
+              ...state.messages[agentMsgIndex],
+              content: state.streamingContent
             }
             break
 
           case 'tool_call':
-            streamingToolCalls.value.push({
+            state.streamingToolCalls.push({
               tool: event.tool || '',
               input: event.input,
             })
             break
 
           case 'tool_result':
-            const lastTool = streamingToolCalls.value[streamingToolCalls.value.length - 1]
+            const lastTool = state.streamingToolCalls[state.streamingToolCalls.length - 1]
             if (lastTool) {
               lastTool.result = event.result
               lastTool.success = event.success
@@ -120,58 +189,73 @@ export const useChatStore = defineStore('chat', () => {
 
           case 'final':
             // 流式完成，更新最终内容
-            messages.value[agentMsgIndex] = {
-              ...messages.value[agentMsgIndex],
-              content: event.output || streamingContent.value
+            state.messages[agentMsgIndex] = {
+              ...state.messages[agentMsgIndex],
+              content: event.output || state.streamingContent
             }
-            sending.value = false
+            state.sending = false
+            state.abortController = null
             break
 
           case 'error':
-            error.value = event.message || '流式输出错误'
-            sending.value = false
+            state.error = event.message || '流式输出错误'
+            state.sending = false
+            state.abortController = null
             break
         }
       },
       (err) => {
-        error.value = err.message
-        sending.value = false
+        state.error = err.message
+        state.sending = false
+        state.abortController = null
       }
     )
 
-    currentAbortController.value = controller
+    state.abortController = controller
   }
 
-  // 取消当前流式请求
-  function cancelStream() {
-    currentAbortController.value?.abort()
-    currentAbortController.value = null
-    sending.value = false
+  // 取消指定会话的流式请求
+  function cancelStream(sessionId?: number) {
+    const id = sessionId ?? currentSessionId.value
+    if (!id) return
+
+    const state = sessionStates.get(id)
+    if (state) {
+      state.abortController?.abort()
+      state.abortController = null
+      state.sending = false
+    }
   }
 
   async function uploadFile(sessionId: number, file: File) {
+    const state = getCurrentState()
     const result = await fileApi.uploadFile(sessionId, file)
-    files.value.push(result)
+    state.files.push(result)
     return result
   }
 
   async function removeFile(sessionId: number, fileId: number) {
+    const state = getCurrentState()
     await fileApi.deleteFile(sessionId, fileId)
-    files.value = files.value.filter(f => f.id !== fileId)
+    state.files = state.files.filter(f => f.id !== fileId)
   }
 
   // 切换会话时清空，避免看到上一个会话的数据
   function clearChat() {
-    cancelStream()
-    messages.value = []
-    files.value = []
-    error.value = null
-    sending.value = false
-    streamingContent.value = ''
-    streamingToolCalls.value = []
+    // 取消所有会话的流式请求
+    sessionStates.forEach((state) => {
+      if (state.abortController) {
+        state.abortController.abort()
+        state.abortController = null
+        state.sending = false
+      }
+    })
+    sessionStates.clear()
+    currentSessionId.value = null
   }
 
   return {
+    currentSessionId,
     messages, files, sending, error,
     streamingContent, streamingToolCalls,
     sortedMessages,

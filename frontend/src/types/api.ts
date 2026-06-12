@@ -93,3 +93,14 @@ export interface SSEEvent {
   message?: string
   iteration?: number
 }
+
+// 每个会话的独立状态
+export interface SessionState {
+  messages: MessageResponse[]
+  files: FileResponse[]
+  sending: boolean
+  error: string | null
+  streamingContent: string
+  streamingToolCalls: Array<{ tool: string; input: any; result?: string; success?: boolean }>
+  abortController: AbortController | null
+}
