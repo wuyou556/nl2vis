@@ -1,11 +1,13 @@
 import os
 import uuid
+import json
+import logging
 import shutil
 from typing import Annotated
-from datetime import datetime
 from pathlib import Path as FilePath
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select,delete,desc,asc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +24,8 @@ from .auth import get_current_user
 
 router = APIRouter(prefix="/sessions", tags=["会话管理"])
 UPLOAD_DIR = FilePath(__file__).parent.parent.parent / "uploads"
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # POST /sessions/  创建会话
@@ -149,6 +153,49 @@ async def send_message(
     agent_message = await SessionService().process_message(session_id, data.content, db)
 
     return agent_message
+
+# ---------------------------------------------------------------------------
+# POST /sessions/{session_id}/messages/stream  发送消息得到流式回应
+# ---------------------------------------------------------------------------
+@router.post("/{session_id}/messages/stream")
+async def send_message_stream(
+    session_id: Annotated[int,Path(ge=1)],
+    data: MessageCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    session = (await db.execute(select(Session).where(Session.id == session_id))).scalars().first()
+    if not session:
+        raise HTTPException(404, detail="会话不存在")
+
+    message = Message(
+        session_id=session_id,
+        sender="user",
+        content=data.content
+    )
+    db.add(message)
+    await db.flush()
+
+    logger.info(f"开始流式响应: session_id={session_id}")
+
+    async def event_generator():
+        try:
+            async for event in SessionService().process_message_stream(
+                session_id,
+                data.content,
+                db
+            ):
+                yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            logger.info(f"流式响应完成: session_id={session_id}")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 

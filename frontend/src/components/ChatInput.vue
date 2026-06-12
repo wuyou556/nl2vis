@@ -43,6 +43,7 @@ function handleKeydown(e: KeyboardEvent) {
       @keydown="handleKeydown"
       resize="none"
     />
+    <slot name="extra" />
     <el-button
       type="primary"
       @click="handleSend"

@@ -10,6 +10,7 @@ AgentExecutor — ReAct 主循环
 import json
 import logging
 import re
+from collections.abc import Generator
 
 from .schemas import AgentAction, AgentObservation, AgentStep, AgentResult
 from .prompts import get_system_prompt
@@ -50,7 +51,7 @@ class AgentExecutor:
 
         # ── ReAct 循环 ────────────────────────────
         for i in range(self.max_iterations):
-            # ① 调用 LLM
+            # 调用 LLM
             response = self.llm.chat.completions.create(
                 model=self.settings.model_name,
                 messages=messages,
@@ -68,7 +69,7 @@ class AgentExecutor:
                     + ("..." if len(llm_text) > 500 else "")
                 )
 
-            # ② 解析输出
+            # 解析输出
             action = self._parse_llm_output(llm_text)
             if action is False:
                 messages.append({"role": "assistant", "content": llm_text or "(empty)"})
@@ -90,7 +91,7 @@ class AgentExecutor:
                     iterations=i + 1,
                 )
 
-            # ③ 调用工具
+            # 调用工具
             observation = self._call_tool(action.tool, action.tool_input)
             step = AgentStep(action=action, observation=observation)
             steps.append(step)
@@ -98,7 +99,7 @@ class AgentExecutor:
             if self.settings.verbose:
                 logger.info(f"[Step {i+1}] {action.tool} → success={observation.success}")
 
-            # ④ 把结果追加回消息（下一轮 LLM 才知道发生了什么）
+            # 把结果追加回消息（下一轮 LLM 才知道发生了什么）
             messages.append({"role": "assistant", "content": llm_text})
             messages.append({
                 "role": "system",
@@ -112,7 +113,108 @@ class AgentExecutor:
             iterations=self.max_iterations,
         )
 
+    def _stream_llm_response(self, messages) -> Generator[str, None, None]:
+        """
+        流式调用LLM，逐步返回token
 
+        Args:
+            messages: 消息列表
+
+        Yields:
+            str: 每次返回一个token或token片段
+        """
+        try:
+            response = self.llm.chat.completions.create(
+                model=self.settings.model_name,
+                messages=messages,
+                temperature=self.settings.temperature,
+                max_tokens=self.settings.max_tokens,
+                stream=True,
+            )
+
+            for chunk in response:
+                # 安全检查
+                if not chunk.choices:
+                    continue
+
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    yield delta.content
+
+        except Exception as e:
+            logger.error(f"LLM流式调用异常: {e}")
+            raise e
+
+    def stream_run(self, user_message, session_id, files, history) -> Generator[dict, None, None]:
+        """流式输出入口，执行ReAct循环，流式返回结果"""
+        # ── 准备阶段 ──────────────────────────────
+        system_prompt = get_system_prompt(build_tools_description())
+        file_info = self._format_file_info(files)
+        message_history = self.memory.load_history(history)
+
+        filenames = [f.filename for f in files] if files else []
+        messages = self.memory.build_messages(
+            system_prompt=system_prompt,
+            history=message_history,
+            user_message=user_message + file_info,
+            agent_steps=[],
+            filenames=filenames
+        )
+
+        self._session_files = files
+
+        # ── ReAct循环 ──────────────────────────────
+        for i in range(self.max_iterations):
+            # 流式调用LLM，收集完整输出
+            full_text = ""
+            for token in self._stream_llm_response(messages):
+                full_text += token
+                yield {"type": "token", "content": token, "iteration": i}
+
+            # 解析完整输出
+            full_text = self._normalize_llm_text(full_text)
+            action = self._parse_llm_output(full_text)
+
+            # 格式错误，请求重试
+            if action is False:
+                messages.append({"role": "assistant", "content": full_text or "(empty)"})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "你的上一次回复为空或格式不正确。"
+                        "请严格使用 Thought + Action + Action Input，"
+                        "或 Thought + Final Answer 格式重新输出。"
+                    ),
+                })
+                yield {"type": "retry", "message": "格式不正确，正在重试..."}
+                continue
+
+            # Final Answer，结束
+            if action is None:
+                final_output = self._extract_final_answer(full_text)
+                yield {"type": "final", "output": final_output}
+                return
+
+            # 调用工具
+            yield {"type": "tool_call", "tool": action.tool, "input": action.tool_input}
+            observation = self._call_tool(action.tool, action.tool_input)
+
+            yield {
+                "type": "tool_result",
+                "tool": action.tool,
+                "result": observation.result,
+                "success": observation.success
+            }
+
+            # 把结果追加回消息（下一轮LLM才知道发生了什么）
+            messages.append({"role": "assistant", "content": full_text})
+            messages.append({
+                "role": "system",
+                "content": f"工具 '{action.tool}' 执行结果:\n{observation.result}"
+            })
+
+        # 超过最大迭代次数 → 强制结束
+        yield {"type": "error", "message": "分析步数超出限制，请简化你的问题后重试。"}
 
 
     def _format_file_info(self, files) -> str:

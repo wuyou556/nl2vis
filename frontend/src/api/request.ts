@@ -3,7 +3,7 @@ import { getToken, removeToken } from '@/utils/storage'
 import { ElMessage } from 'element-plus'
 
 const request = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
+  baseURL: 'http://localhost:8000/api/v1',
   timeout: 120000,
 })
 

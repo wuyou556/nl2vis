@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted } from 'vue'
+import { ref, watch, nextTick} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '@/store/session'
 import { useChatStore } from '@/store/chat'
@@ -16,7 +16,6 @@ const chatStore = useChatStore()
 const messagesRef = ref<HTMLElement | null>(null)
 const editingTitle = ref(false)
 const titleInput = ref('')
-const fileInputRef = ref<HTMLInputElement | null>(null)
 
 // 当前会话 id（从路由参数取）
 const sessionId = ref<number | null>(null)
@@ -58,10 +57,16 @@ watch(
   () => scrollToBottom()
 )
 
-// 发送消息
-async function handleSend(content: string) {
+// 流式内容变化时自动滚动
+watch(
+  () => chatStore.streamingContent,
+  () => scrollToBottom()
+)
+
+// 发送消息（流式输出）
+function handleSend(content: string) {
   if (!sessionId.value) return
-  await chatStore.sendMessage(sessionId.value, content)
+  chatStore.sendMessageStream(sessionId.value, content)
   scrollToBottom()
 }
 
@@ -134,7 +139,7 @@ function triggerFileSelect() {
         <el-icon><Edit /></el-icon>
       </div>
       <el-button text size="small" type="danger" @click="handleClose">
-        关闭会话
+        删除会话
       </el-button>
     </div>
 
@@ -176,7 +181,18 @@ function triggerFileSelect() {
       :disabled="chatStore.sending"
       @send="handleSend"
       @upload="triggerFileSelect"
-    />
+    >
+      <template #extra>
+        <el-button
+          v-if="chatStore.sending"
+          type="danger"
+          size="small"
+          @click="chatStore.cancelStream()"
+        >
+          取消
+        </el-button>
+      </template>
+    </ChatInput>
 
     <!-- 文件上传（处理拖拽） -->
     <FileUploader

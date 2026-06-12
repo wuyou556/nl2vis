@@ -50,14 +50,11 @@ export const useSessionStore = defineStore('session', () => {
     if (idx !== -1) sessions.value[idx] = updated
   }
 
-  // 关闭会话后本地标记状态
+  // 删除会话（硬删除，从列表中移除）
   async function closeSession(id: number) {
     await sessionApi.closeSession(id)
-    const idx = sessions.value.findIndex(s => s.id === id)
-    if (idx !== -1) {
-      sessions.value[idx].status = 'closed'
-      sessions.value[idx].ended_at = new Date().toISOString()
-    }
+    // 后端是硬删除，所以从前端列表中移除
+    sessions.value = sessions.value.filter(s => s.id !== id)
     if (currentId.value === id) currentId.value = null
   }
 

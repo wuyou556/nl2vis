@@ -80,3 +80,16 @@ export interface FileResponse {
 export interface ApiError {
   detail: string
 }
+
+// ── SSE 流式事件 ──
+export interface SSEEvent {
+  type: 'token' | 'tool_call' | 'tool_result' | 'retry' | 'final' | 'error'
+  content?: string
+  tool?: string
+  input?: any
+  result?: string
+  success?: boolean
+  output?: string
+  message?: string
+  iteration?: number
+}
